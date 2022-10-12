@@ -78,7 +78,7 @@ async function main() {
         });
 
       // Logs
-      console.log(`Waiting for Initialized() Event`);
+      console.log(`Waiting for 'Initialized' Event`);
     }
     // If not the maint thread
     else {
