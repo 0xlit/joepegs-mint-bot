@@ -102,7 +102,7 @@ async function main() {
 
           // Send mint transaction
           try {
-            let mintTx = await LaunchpegContract.methods.allowlistMint(1).send({
+            let mintTx = LaunchpegContract.methods.allowlistMint(1).send({
               gas: 300000,
               from: account.address,
               maxFeePerGas: web3.utils.toWei("300", "gwei"),
