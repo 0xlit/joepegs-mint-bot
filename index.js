@@ -1,4 +1,5 @@
 const Web3 = require("web3");
+const fs = require("fs");
 const {Worker, workerData, isMainThread, parentPort} = require("worker_threads");
 require("dotenv").config();
 
@@ -17,28 +18,28 @@ const LaunchpegABI = require("./abi/LaunchpegABI.json");
 
 async function main() {
   try {
-    // WebSocket provider with configurations
-    const webSocketProvider = await new Web3.providers.WebsocketProvider(webSocketIP, {
-      clientConfig: {
-        keepalive: true,
-        keepaliveInterval: 30000,
-      },
-      reconnect: {
-        auto: true,
-        delay: 1000,
-        maxAttempts: 3,
-        onTimeout: true,
-      },
-    });
-
-    //Initialize web3 using webSocketProvider
-    const web3 = await new Web3(webSocketProvider);
-
-    //Initialize launchpeg Contract using Launchpeg Address and ABI
-    const LaunchpegContract = await new web3.eth.Contract(LaunchpegABI, LaunchpegAddress);
-
     // Check if main thread
     if (isMainThread) {
+      // WebSocket provider with configurations
+      const webSocketProvider = await new Web3.providers.WebsocketProvider(webSocketIP, {
+        clientConfig: {
+          keepalive: true,
+          keepaliveInterval: 30000,
+        },
+        reconnect: {
+          auto: true,
+          delay: 1000,
+          maxAttempts: 3,
+          onTimeout: true,
+        },
+      });
+
+      //Initialize web3 using webSocketProvider
+      const web3 = await new Web3(webSocketProvider);
+
+      //Initialize launchpeg Contract using Launchpeg Address and ABI
+      const LaunchpegContract = await new web3.eth.Contract(LaunchpegABI, LaunchpegAddress);
+
       // Subscribe and listen Initialized() event
       LaunchpegContract.events
         .Initialized()
@@ -82,13 +83,50 @@ async function main() {
     }
     // If not the maint thread
     else {
-      parentPort.postMessage(`Spawned Worker ${workerData.numThreads + 1} is Waiting For Mint Time`);
+      let providers = [];
+      let signedTxs = [];
 
-      // Initialize Account from privateKey
-      account = await web3.eth.accounts.privateKeyToAccount(privateKeys[workerData.numThreads]);
+      //Get RPC URL from file
+      const URLs = await JSON.parse(fs.readFileSync("./json_rpc_list.json"));
 
-      // Add account to wallet
-      await web3.eth.accounts.wallet.add(account);
+      // Initialize LaunchpegContracts and accounts for each URL in the list
+      for (let i = 0; i < URLs.length; i++) {
+        // Initialize web3 using any jsonrpc url
+        const web3 = await new Web3(URLs[i]);
+
+        // .push() initialized contract to array
+        providers.push(web3);
+
+        // Initialize LaunchpegContract using web3 provider above
+        const LaunchpegContract = await new web3.eth.Contract(LaunchpegABI, LaunchpegAddress);
+
+        // Get encoded data of tx that will get send
+        let encodedData = await LaunchpegContract.methods.allowlistMint(1).encodeABI();
+
+        // Initialize Account
+        let account = await web3.eth.accounts.privateKeyToAccount(privateKeys[workerData.numThreads]);
+
+        // Transaction object
+        let unsignedTx = {
+          nonce: await web3.eth.getTransactionCount(account.address),
+          chainId: await web3.eth.getChainId(),
+          to: LaunchpegAddress,
+          data: encodedData,
+          value: 0,
+          maxFeePerGas: await Web3.utils.toWei("300", "gwei"),
+          maxPriorityFeePerGas: await Web3.utils.toWei("50", "gwei"),
+          gas: 300000,
+        };
+
+        // Sign transaction
+        let signedTx = await web3.eth.accounts.signTransaction(unsignedTx, account.privateKey);
+
+        // Push signed transactions to array to send them later
+        signedTxs.push(signedTx);
+      }
+
+      // Logs
+      parentPort.postMessage(`Worker ${workerData.numThreads} is Ready and Waiting For Mint Time`);
 
       // Get allowlistStartTime from main thread
       let allowlistStartTime = workerData.startTime;
@@ -100,23 +138,19 @@ async function main() {
           // Logs
           parentPort.postMessage(`Sending Mint TX for Wallet No: ${workerData.numThreads}`);
 
-          // Send mint transaction
-          try {
-            let mintTx = LaunchpegContract.methods.allowlistMint(1).send({
-              gas: 300000,
-              from: account.address,
-              maxFeePerGas: web3.utils.toWei("300", "gwei"),
-              maxPriorityFeePerGas: web3.utils.toWei("50", "gwei"),
-            });
-
-            // Logs
-            parentPort.postMessage("Mint Tx has succesfully sent");
-
-            //Stop trying if mint is success
-            keepTrying = false;
-          } catch (err) {
-            // Error logs
-            parentPort.postMessage(`Send Mint TX ${err}`);
+          // Send mint transaction for all providers initialized before
+          for (let i = 0; i < providers.length; i++) {
+            // Send signed transaction that initialized before
+            providers[i].eth
+              .sendSignedTransaction(signedTxs[i].rawTransaction)
+              .on("sent", (res) => {
+                parentPort.postMessage("Mint Tx has succesfully sent");
+                //parentPort.postMessage(res);
+                keepTrying = false;
+              })
+              .on("error", (err) => {
+                parentPort.postMessage(`Sending ${err}`);
+              });
           }
         }
       }
