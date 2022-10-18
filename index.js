@@ -146,12 +146,12 @@ async function main() {
               .on("sent", (res) => {
                 parentPort.postMessage("Mint Tx has succesfully sent");
                 //parentPort.postMessage(res);
-                keepTrying = false;
               })
               .on("error", (err) => {
                 parentPort.postMessage(`Sending ${err}`);
               });
           }
+          keepTrying = false;
         }
       }
     }
