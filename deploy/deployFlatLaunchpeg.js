@@ -13,8 +13,8 @@ const privateKeys = [process.env.PRIVATE_KEY1, process.env.PRIVATE_KEY2, process
 const LaunchpegAddress = "0xDefe8E8Ee743B8dd61Cf11D861C66B154cfc9048";
 
 // Launchpeg ABI
-const LaunchpegABI = require("./abi/LaunchpegFactory.json");
-const Launchpeg = require("./abi/LaunchpegABI.json");
+const LaunchpegABI = require("../abi/LaunchpegFactory.json");
+const Launchpeg = require("../abi/LaunchpegABI.json");
 async function main() {
   const webSocketProvider = await new Web3.providers.WebsocketProvider(webSocketIP, {
     clientConfig: {
