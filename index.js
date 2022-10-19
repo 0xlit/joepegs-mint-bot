@@ -91,7 +91,7 @@ async function main() {
 
       // Initialize LaunchpegContracts and accounts for each URL in the list
       for (let i = 0; i < URLs.length; i++) {
-        //Type
+        // Casting
         signedTxs[i] = [];
 
         // Initialize web3 using any jsonrpc url
@@ -119,7 +119,7 @@ async function main() {
         let maxFeePerGas = await Web3.utils.toWei("300", "gwei");
         let maxPriorityFeePerGas = await Web3.utils.toWei("50", "gwei");
 
-        // Prepare 100 tx push them to array
+        // Prepare 20 txs and push them to array
         for (let j = 0; j < 20; j++) {
           // Transaction object
           let unsignedTx = {
@@ -168,10 +168,9 @@ async function main() {
                 })
                 .on("receipt", (res) => {
                   parentPort.postMessage(`Receipt at ${Math.trunc(Number(Date.now()) / 1000)}`);
-                  console.log(res.blockNumber);
                 })
                 .on("error", (err) => {
-                  //parentPort.postMessage(`Sending ${err}`);
+                  parentPort.postMessage(`Sending ${err}`);
                 });
             }
           }
