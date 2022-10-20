@@ -60,7 +60,7 @@ async function main() {
         .Initialized()
         .on("data", (response) => {
           // Logs
-          console.log(`Launchpeg Initialized at ${Date.now()}`);
+          console.log(`Launchpeg Initialized`);
 
           //Get Start Time from event response
           let startTime = response.returnValues.allowlistStartTime;
@@ -106,52 +106,35 @@ async function main() {
 
       // Initialize LaunchpegContracts and accounts for each URL in the list
       for (let i = 0; i < URLs.length; i++) {
-        // Casting
-        signedTxs[i] = [];
+        try {
+          // Initialize web3 using any jsonrpc url
+          const web3 = await new Web3(URLs[i]);
 
-        // Initialize web3 using any jsonrpc url
-        const web3 = await new Web3(URLs[i]);
+          // Initialize LaunchpegContract using web3 provider above
+          const LaunchpegContract = await new web3.eth.Contract(
+            LaunchpegABI,
+            LaunchpegAddress
+          );
 
-        // .push() initialized contract to array
-        providers.push(web3);
+          // Get encoded data of tx that will get send
+          let encodedData = await LaunchpegContract.methods
+            .allowlistMint(1)
+            .encodeABI();
 
-        // Initialize LaunchpegContract using web3 provider above
-        const LaunchpegContract = await new web3.eth.Contract(
-          LaunchpegABI,
-          LaunchpegAddress
-        );
+          // Initialize Account
+          let account = await web3.eth.accounts.privateKeyToAccount(
+            privateKeys[workerData.numThreads]
+          );
 
-        // Get encoded data of tx that will get send
-        let encodedData = await LaunchpegContract.methods
-          .allowlistMint(1)
-          .encodeABI();
-
-        // Initialize Account
-        let account = await web3.eth.accounts.privateKeyToAccount(
-          privateKeys[workerData.numThreads]
-        );
-
-        // Get account current nonce
-        let nonce = await web3.eth.getTransactionCount(account.address);
-
-        // Get chainId
-        let chainId = await web3.eth.getChainId();
-
-        //Adjust Fees
-        let maxFeePerGas = await Web3.utils.toWei("300", "gwei");
-        let maxPriorityFeePerGas = await Web3.utils.toWei("50", "gwei");
-
-        // Prepare 20 txs and push them to array
-        for (let j = 0; j < 20; j++) {
           // Transaction object
           let unsignedTx = {
-            nonce: nonce + j,
-            chainId: chainId,
+            nonce: await web3.eth.getTransactionCount(account.address),
+            chainId: await web3.eth.getChainId(),
             to: LaunchpegAddress,
             data: encodedData,
             value: 0,
-            maxFeePerGas: maxFeePerGas,
-            maxPriorityFeePerGas: maxPriorityFeePerGas,
+            maxFeePerGas: await Web3.utils.toWei("300", "gwei"),
+            maxPriorityFeePerGas: await Web3.utils.toWei("50", "gwei"),
             gas: 300000,
           };
 
@@ -161,8 +144,13 @@ async function main() {
             account.privateKey
           );
 
+          // .push() initialized contract to array
+          providers.push(web3);
+
           // Push signed transactions to array to send them later
-          signedTxs[i].push(signedTx.rawTransaction);
+          signedTxs.push(signedTx);
+        } catch (err) {
+          //console.log(`provider init err`);
         }
       }
 
@@ -177,38 +165,26 @@ async function main() {
       // Wait for mint time
       let keepTrying = true;
       while (keepTrying) {
-        if (Number(Date.now()) / 1000 >= Number(allowlistStartTime) - 10) {
-          //Mint time passed
-          keepTrying = false;
+        if (Number(Date.now()) / 1000 >= Number(allowlistStartTime) - 2) {
           // Logs
           parentPort.postMessage(
-            `Sending Mint TXs for Wallet No: ${workerData.numThreads}`
+            `Sending Mint TX for Wallet No: ${workerData.numThreads}`
           );
 
           // Send mint transaction for all providers initialized before
-          for (let j = 0; j < signedTxs[0].length; j++) {
-            for (let i = 0; i < providers.length; i++) {
-              // Send signed transactions that initialized before
-              providers[i].eth
-                .sendSignedTransaction(signedTxs[i][j])
-                .on("sent", (res) => {
-                  parentPort.postMessage(
-                    `Mint Tx has succesfully sent at ${Math.trunc(
-                      Number(Date.now()) / 1000
-                    )}`
-                  );
-                  //parentPort.postMessage(res);
-                })
-                .on("receipt", (res) => {
-                  parentPort.postMessage(
-                    `Receipt at ${Math.trunc(Number(Date.now()) / 1000)}`
-                  );
-                })
-                .on("error", (err) => {
-                  parentPort.postMessage(`Sending ${err}`);
-                });
-            }
+          for (let i = 0; i < providers.length; i++) {
+            // Send signed transaction that initialized before
+            providers[i].eth
+              .sendSignedTransaction(signedTxs[i].rawTransaction)
+              .on("sent", (res) => {
+                parentPort.postMessage("Mint Tx has succesfully sent");
+                //parentPort.postMessage(res);
+              })
+              .on("error", (err) => {
+                parentPort.postMessage(`Sending ${err}`);
+              });
           }
+          keepTrying = false;
         }
       }
     }
